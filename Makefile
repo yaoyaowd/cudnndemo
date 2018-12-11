@@ -11,6 +11,6 @@ conv: conv.cu
 vecadd: vecadd.cu
 	$(CXX) vecadd.cu -o vecadd
 matrix: matrix1.cu
-	$(CXX) matrix1.cu -o matrix
+	$(CXX) -lprofiler matrix1.cu -o matrix
 clean:
 	rm $(TARGET) vecadd
