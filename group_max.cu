@@ -141,6 +141,7 @@ int main() {
                                  keys, keys_out, vals, vals_out,
                                  d_num_runs_out, reduction_op, vsize);
   cudaMalloc(&d_temp_storage, temp_storage_bytes);
+  std::cout << "temp storage: " << temp_storage_bytes << std::endl;
 
   et = dtime_usec(0);
   cub::DeviceReduce::ReduceByKey(d_temp_storage, temp_storage_bytes,
