@@ -1,4 +1,5 @@
 #include <cudnn.h>
+#include <cuda_runtime.h>
 #include <cassert>
 #include <cstdlib>
 #include <iostream>
@@ -18,7 +19,7 @@ int main(int argc, const char* argv[]) {
   int gpu_id = 0;
   std::cerr << "GPU: " << gpu_id << std::endl;
 
-  std::vector<float> image(3 * 300 * 2944);
+  std::vector<short> image(3 * 300 * 2944);
   int rows = 300;
   int cols = 2944;
 
@@ -31,7 +32,7 @@ int main(int argc, const char* argv[]) {
   checkCUDNN(cudnnCreateTensorDescriptor(&input_descriptor));
   checkCUDNN(cudnnSetTensor4dDescriptor(input_descriptor,
                                         /*format=*/CUDNN_TENSOR_NCHW,
-                                        /*dataType=*/CUDNN_DATA_FLOAT,
+                                        /*dataType=*/CUDNN_DATA_HALF,
                                         /*batch_size=*/1,
                                         /*channels=*/3,
                                         /*image_height=*/rows,
@@ -40,7 +41,7 @@ int main(int argc, const char* argv[]) {
   cudnnFilterDescriptor_t kernel_descriptor;
   checkCUDNN(cudnnCreateFilterDescriptor(&kernel_descriptor));
   checkCUDNN(cudnnSetFilter4dDescriptor(kernel_descriptor,
-                                        /*dataType=*/CUDNN_DATA_FLOAT,
+                                        /*dataType=*/CUDNN_DATA_HALF,
                                         /*format=*/CUDNN_TENSOR_NCHW,
                                         /*out_channels=*/32,
                                         /*in_channels=*/3,
@@ -57,7 +58,7 @@ int main(int argc, const char* argv[]) {
                                              /*dilation_height=*/1,
                                              /*dilation_width=*/1,
                                              /*mode=*/CUDNN_CROSS_CORRELATION,
-                                             /*computeType=*/CUDNN_DATA_FLOAT));
+                                             /*computeType=*/CUDNN_DATA_HALF));
 
   int batch_size{0}, channels{0}, height{0}, width{0};
   checkCUDNN(cudnnGetConvolution2dForwardOutputDim(convolution_descriptor,
@@ -75,7 +76,7 @@ int main(int argc, const char* argv[]) {
   checkCUDNN(cudnnCreateTensorDescriptor(&output_descriptor));
   checkCUDNN(cudnnSetTensor4dDescriptor(output_descriptor,
                                         /*format=*/CUDNN_TENSOR_NCHW,
-                                        /*dataType=*/CUDNN_DATA_FLOAT,
+                                        /*dataType=*/CUDNN_DATA_HALF,
                                         /*batch_size=*/1,
                                         /*channels=*/32,
                                         /*image_height=*/rows,
@@ -91,6 +92,7 @@ int main(int argc, const char* argv[]) {
                                           CUDNN_CONVOLUTION_FWD_PREFER_FASTEST,
                                           /*memoryLimitInBytes=*/0,
                                           &convolution_algorithm));
+  printf("%d\n", convolution_algorithm);
 
   size_t workspace_bytes{0};
   checkCUDNN(cudnnGetConvolutionForwardWorkspaceSize(cudnn,
@@ -107,26 +109,26 @@ int main(int argc, const char* argv[]) {
   void* d_workspace{nullptr};
   cudaMalloc(&d_workspace, workspace_bytes);
 
-  int image_bytes = batch_size * 3 * height * width * sizeof(float);
-  int output_bytes = batch_size * 32 * height * width * sizeof(float);
+  int image_bytes = batch_size * 3 * height * width * sizeof(short);
+  int output_bytes = batch_size * 32 * height * width * sizeof(short);
 
-  float* d_input{nullptr};
+  short* d_input{nullptr};
   cudaMalloc(&d_input, image_bytes);
   cudaMemcpy(d_input, image.data(), image_bytes, cudaMemcpyHostToDevice);
 
-  float* d_output{nullptr};
+  short* d_output{nullptr};
   cudaMalloc(&d_output, output_bytes);
   cudaMemset(d_output, 0, output_bytes);
 
   // clang-format off
-  const float kernel_template[3][3] = {
+  const short kernel_template[3][3] = {
     {1, 1, 1},
     {1, -8, 1},
     {1, 1, 1}
   };
   // clang-format on
 
-  float h_kernel[32][3][3][3];
+  short h_kernel[32][3][3][3];
   for (int kernel = 0; kernel < 32; ++kernel) {
     for (int channel = 0; channel < 3; ++channel) {
       for (int row = 0; row < 3; ++row) {
@@ -137,7 +139,7 @@ int main(int argc, const char* argv[]) {
     }
   }
 
-  float* d_kernel{nullptr};
+  short* d_kernel{nullptr};
   cudaMalloc(&d_kernel, sizeof(h_kernel));
   cudaMemcpy(d_kernel, h_kernel, sizeof(h_kernel), cudaMemcpyHostToDevice);
 
@@ -166,7 +168,7 @@ int main(int argc, const char* argv[]) {
   cudaEventElapsedTime(&time, start_event, stop_event);
   printf("conv took %f ms\n", time);
 
-  float* h_output = new float[output_bytes];
+  short* h_output = new short[output_bytes];
   cudaMemcpy(h_output, d_output, output_bytes, cudaMemcpyDeviceToHost);
 
   delete[] h_output;
