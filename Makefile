@@ -6,8 +6,7 @@ CXXFLAGS := -std=c++11 -O2 -D_FORCE_INLINES
 
 all: conv
 conv: conv.cu
-	$(CXX) $(CXXFLAGS) $(HEADERS) $(LIBS) conv.cu -o conv
-	-lcudnn -lopencv_imgcodecs -lopencv_imgproc -lopencv_core
+	$(CXX) $(CXXFLAGS) $(HEADERS) $(LIBS) conv.cu -o conv -lcudnn
 vecadd: vecadd.cu
 	$(CXX) vecadd.cu -o vecadd
 matrix: matrix1.cu
