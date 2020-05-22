@@ -15,15 +15,14 @@
     }                                                        \
   }
 
+typedef float DataType;
+
 int main(int argc, const char* argv[]) {
-  int gpu_id = 0;
-  std::cerr << "GPU: " << gpu_id << std::endl;
+  cudaSetDevice(0);
 
-  std::vector<short> image(32 * 300 * 2944);
-  int rows = 300;
-  int cols = 2944;
-
-  cudaSetDevice(gpu_id);
+  int in = 1, ic = 32, irow = 256, icol = 2944;
+  int on = 1, oc = 32, orow = 128, ocol = 1472;
+  cudnnDataType_t cudnn_type = sizeof(DataType) == 4 ? CUDNN_DATA_FLOAT : CUDNN_DATA_HALF;
 
   cudnnHandle_t cudnn;
   cudnnCreate(&cudnn);
@@ -32,19 +31,19 @@ int main(int argc, const char* argv[]) {
   checkCUDNN(cudnnCreateTensorDescriptor(&input_descriptor));
   checkCUDNN(cudnnSetTensor4dDescriptor(input_descriptor,
                                         /*format=*/CUDNN_TENSOR_NCHW,
-                                        /*dataType=*/CUDNN_DATA_HALF,
-                                        /*batch_size=*/1,
-                                        /*channels=*/32,
-                                        /*image_height=*/rows,
-                                        /*image_width=*/cols));
+                                        /*dataType=*/cudnn_type,
+                                        /*batch_size=*/in,
+                                        /*channels=*/ic,
+                                        /*image_height=*/irow,
+                                        /*image_width=*/icol));
 
   cudnnFilterDescriptor_t kernel_descriptor;
   checkCUDNN(cudnnCreateFilterDescriptor(&kernel_descriptor));
   checkCUDNN(cudnnSetFilter4dDescriptor(kernel_descriptor,
-                                        /*dataType=*/CUDNN_DATA_HALF,
+                                        /*dataType=*/cudnn_type,
                                         /*format=*/CUDNN_TENSOR_NCHW,
-                                        /*out_channels=*/32,
-                                        /*in_channels=*/32,
+                                        /*out_channels=*/oc,
+                                        /*in_channels=*/ic,
                                         /*kernel_height=*/3,
                                         /*kernel_width=*/3));
 
@@ -53,12 +52,12 @@ int main(int argc, const char* argv[]) {
   checkCUDNN(cudnnSetConvolution2dDescriptor(convolution_descriptor,
                                              /*pad_height=*/1,
                                              /*pad_width=*/1,
-                                             /*vertical_stride=*/1,
-                                             /*horizontal_stride=*/1,
+                                             /*vertical_stride=*/2,
+                                             /*horizontal_stride=*/2,
                                              /*dilation_height=*/1,
                                              /*dilation_width=*/1,
                                              /*mode=*/CUDNN_CROSS_CORRELATION,
-                                             /*computeType=*/CUDNN_DATA_HALF));
+                                             /*computeType=*/cudnn_type));
   checkCUDNN(cudnnSetConvolutionMathType(convolution_descriptor, CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION));
 
   int batch_size{0}, channels{0}, height{0}, width{0};
@@ -77,11 +76,11 @@ int main(int argc, const char* argv[]) {
   checkCUDNN(cudnnCreateTensorDescriptor(&output_descriptor));
   checkCUDNN(cudnnSetTensor4dDescriptor(output_descriptor,
                                         /*format=*/CUDNN_TENSOR_NCHW,
-                                        /*dataType=*/CUDNN_DATA_HALF,
-                                        /*batch_size=*/1,
-                                        /*channels=*/32,
-                                        /*image_height=*/rows,
-                                        /*image_width=*/cols));
+                                        /*dataType=*/cudnn_type,
+                                        /*batch_size=*/on,
+                                        /*channels=*/oc,
+                                        /*image_height=*/orow,
+                                        /*image_width=*/ocol));
 
   cudnnConvolutionFwdAlgo_t convolution_algorithm;
   checkCUDNN(
@@ -91,7 +90,7 @@ int main(int argc, const char* argv[]) {
                                           convolution_descriptor,
                                           output_descriptor,
                                           CUDNN_CONVOLUTION_FWD_PREFER_FASTEST,
-                                          /*memoryLimitInBytes=*/0,
+                                          /*memoryLimitInBytes=*/2 * 1024 * 1024 * 1024,
                                           &convolution_algorithm));
   printf("%d\n", convolution_algorithm);
   //convolution_algorithm = CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED;
@@ -112,12 +111,12 @@ int main(int argc, const char* argv[]) {
   void* d_workspace{nullptr};
   cudaMalloc(&d_workspace, workspace_bytes);
 
-  int image_bytes = batch_size * 32 * height * width * sizeof(short);
-  int output_bytes = batch_size * 32 * height * width * sizeof(short);
+  int image_bytes = in * ic * irow * icol * sizeof(DataType);
+  int output_bytes = on * oc * orow * ocol * sizeof(DataType);
 
   short* d_input{nullptr};
   cudaMalloc(&d_input, image_bytes);
-  cudaMemcpy(d_input, image.data(), image_bytes, cudaMemcpyHostToDevice);
+  cudaMemset(d_input, 1, image_bytes);
 
   short* d_output{nullptr};
   cudaMalloc(&d_output, output_bytes);
@@ -131,9 +130,9 @@ int main(int argc, const char* argv[]) {
   };
   // clang-format on
 
-  short h_kernel[32][3][3][3];
-  for (int kernel = 0; kernel < 32; ++kernel) {
-    for (int channel = 0; channel < 32; ++channel) {
+  short h_kernel[256][256][3][3];
+  for (int kernel = 0; kernel < ic; ++kernel) {
+    for (int channel = 0; channel < oc; ++channel) {
       for (int row = 0; row < 3; ++row) {
         for (int column = 0; column < 3; ++column) {
           h_kernel[kernel][channel][row][column] = kernel_template[row][column];
