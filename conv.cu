@@ -20,9 +20,10 @@ typedef float DataType;
 int main(int argc, const char* argv[]) {
   cudaSetDevice(0);
 
-  int in = 1, ic = 32, irow = 256, icol = 2944;
-  int on = 1, oc = 32, orow = 128, ocol = 1472;
+  int in = 1, ic = 256, irow = 16, icol = 16;
+  int on = 1, oc = 256, orow = 16, ocol = 16;
   cudnnDataType_t cudnn_type = sizeof(DataType) == 4 ? CUDNN_DATA_FLOAT : CUDNN_DATA_HALF;
+  cudnnTensorFormat_t format_type = CUDNN_TENSOR_NHWC;
 
   cudnnHandle_t cudnn;
   cudnnCreate(&cudnn);
@@ -30,7 +31,7 @@ int main(int argc, const char* argv[]) {
   cudnnTensorDescriptor_t input_descriptor;
   checkCUDNN(cudnnCreateTensorDescriptor(&input_descriptor));
   checkCUDNN(cudnnSetTensor4dDescriptor(input_descriptor,
-                                        /*format=*/CUDNN_TENSOR_NCHW,
+                                        /*format=*/format_type,
                                         /*dataType=*/cudnn_type,
                                         /*batch_size=*/in,
                                         /*channels=*/ic,
@@ -41,7 +42,7 @@ int main(int argc, const char* argv[]) {
   checkCUDNN(cudnnCreateFilterDescriptor(&kernel_descriptor));
   checkCUDNN(cudnnSetFilter4dDescriptor(kernel_descriptor,
                                         /*dataType=*/cudnn_type,
-                                        /*format=*/CUDNN_TENSOR_NCHW,
+                                        /*format=*/format_type,
                                         /*out_channels=*/oc,
                                         /*in_channels=*/ic,
                                         /*kernel_height=*/3,
@@ -52,13 +53,14 @@ int main(int argc, const char* argv[]) {
   checkCUDNN(cudnnSetConvolution2dDescriptor(convolution_descriptor,
                                              /*pad_height=*/1,
                                              /*pad_width=*/1,
-                                             /*vertical_stride=*/2,
-                                             /*horizontal_stride=*/2,
+                                             /*vertical_stride=*/1,
+                                             /*horizontal_stride=*/1,
                                              /*dilation_height=*/1,
                                              /*dilation_width=*/1,
                                              /*mode=*/CUDNN_CROSS_CORRELATION,
                                              /*computeType=*/cudnn_type));
-  checkCUDNN(cudnnSetConvolutionMathType(convolution_descriptor, CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION));
+  // checkCUDNN(cudnnSetConvolutionMathType(convolution_descriptor, CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION));
+  checkCUDNN(cudnnSetConvolutionMathType(convolution_descriptor, CUDNN_TENSOR_OP_MATH));
 
   int batch_size{0}, channels{0}, height{0}, width{0};
   checkCUDNN(cudnnGetConvolution2dForwardOutputDim(convolution_descriptor,
@@ -75,7 +77,7 @@ int main(int argc, const char* argv[]) {
   cudnnTensorDescriptor_t output_descriptor;
   checkCUDNN(cudnnCreateTensorDescriptor(&output_descriptor));
   checkCUDNN(cudnnSetTensor4dDescriptor(output_descriptor,
-                                        /*format=*/CUDNN_TENSOR_NCHW,
+                                        /*format=*/format_type,
                                         /*dataType=*/cudnn_type,
                                         /*batch_size=*/on,
                                         /*channels=*/oc,
@@ -106,6 +108,7 @@ int main(int argc, const char* argv[]) {
                                                      &workspace_bytes));
   std::cerr << "Workspace size: " << (workspace_bytes / 1048576.0) << "MB"
             << std::endl;
+  workspace_bytes = max((int)workspace_bytes, 1024);
   assert(workspace_bytes > 0);
 
   void* d_workspace{nullptr};
